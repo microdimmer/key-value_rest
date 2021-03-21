@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	_ "github.com/microdimmer/key-value_rest/internal/app/db/kv.db"
+	"github.com/microdimmer/key-value_rest/tree/main/internal/app/kv_db"
 	"github.com/sirupsen/logrus"
 )
 
