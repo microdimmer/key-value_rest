@@ -2,11 +2,10 @@ package rest_server
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/microdimmer/key-value_rest/tree/main/internal/app/kv_db"
+	"github.com/microdimmer/key-value_rest/internal/app/kv_db"
 	"github.com/sirupsen/logrus"
 )
 
@@ -14,7 +13,12 @@ type RESTServer struct {
 	config *Config
 	logger *logrus.Logger
 	router *mux.Router
-	db     *DataMap
+	db     *kv_db.DataMap
+}
+
+type DataObject struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 func New(config *Config) *RESTServer {
@@ -33,7 +37,7 @@ func (s *RESTServer) Start() error {
 
 	s.configureRouter()
 
-	s.logger.Info("starting api server")
+	s.logger.Info("server listening at port 8080")
 
 	return http.ListenAndServe(s.config.BindAddr, s.router)
 }
@@ -50,49 +54,63 @@ func (s *RESTServer) configureLogger() error {
 }
 
 func (s *RESTServer) configureRouter() {
-	// s.router.HandleFunc("/Upsert", s.handleGet())
-	// s.router.HandleFunc("/Delete", s.handleGet())
-	// s.router.HandleFunc("/get", s.handleGet())
-	// s.router.HandleFunc("/list", s.handleGet())
-	// s.router.HandleFunc("/hello", s.handleHello())
-
 	s.router.HandleFunc("/list", s.handleList()).Methods("GET")
-	s.router.HandleFunc("/get", s.handleGet()).Methods("GET")
-	s.router.HandleFunc("/delete", s.handleDelete()).Methods("DELETE")
+	s.router.HandleFunc("/get/{key}", s.handleGet()).Methods("GET")
+	s.router.HandleFunc("/delete/{key}", s.handleDelete()).Methods("DELETE")
 	s.router.HandleFunc("/upsert", s.handleUpsert()).Methods("POST")
-
-	s.router.HandleFunc("/hello", s.handleHello())
 }
 
 func (s *RESTServer) handleList() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
+		respondWithJSON(w, 200, s.db.List())
 	}
 }
 
 func (s *RESTServer) handleGet() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
+		params := mux.Vars(r)
+		s.logger.Info("get " + params["key"])
+		record, ok := s.db.Get(params["key"])
+		req := &DataObject{}
+		if ok {
+			req.Key = params["key"]
+			req.Value = record
+			respondWithJSON(w, 200, req)
+		} else {
+			respondWithJSON(w, 204, req)
+		}
 	}
 }
 
 func (s *RESTServer) handleDelete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// s.db.Delete()
-		io.WriteString(w, "Record succesfully deleteted")
+		params := mux.Vars(r)
+		s.logger.Info("delete " + params["key"])
+		ok := s.db.Delete(params["key"])
+		if ok {
+			respondWithMessage(w, 200, "Record succesfully deleteted")
+		} else {
+			respondWithError(w, 400, "There is no record with key "+params["key"])
+		}
 	}
 }
 
 func (s *RESTServer) handleUpsert() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "Record succesfully updated/created")
+		req := &DataObject{}
+		err := json.NewDecoder(r.Body).Decode(req)
+		s.logger.Info("upsert")
+		if err != nil {
+			respondWithError(w, 400, "Wrong payload")
+		} else {
+			s.db.Set(req.Key, req.Value)
+			respondWithJSON(w, 200, req)
+		}
 	}
 }
 
-func (s *RESTServer) handleHello() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "Hello")
-	}
+func respondWithMessage(w http.ResponseWriter, code int, message string) {
+	respondWithJSON(w, code, map[string]string{"message": message})
 }
 
 func respondWithError(w http.ResponseWriter, code int, message string) {
@@ -101,7 +119,6 @@ func respondWithError(w http.ResponseWriter, code int, message string) {
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	response, _ := json.Marshal(payload)
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	w.Write(response)
